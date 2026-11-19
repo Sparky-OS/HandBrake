@@ -1260,6 +1260,14 @@ static hb_buffer_t *wrap_frame(hb_work_private_t *pv)
 
     if (!pv->job && pv->title)
     {
+        // Use decoded frame packing when the container has no stereo metadata.
+        sd = av_frame_get_side_data(pv->frame, AV_FRAME_DATA_STEREO3D);
+        if (pv->title->stereo_3d.type == HB_STEREO3D_UNSET &&
+            sd != NULL && sd->size >= sizeof(AVStereo3D))
+        {
+            pv->title->stereo_3d = hb_stereo_3d_ff_to_hb(*(AVStereo3D *)sd->data);
+        }
+
         // Check for HDR mastering data
         sd = av_frame_get_side_data(pv->frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
         if (sd != NULL && sd->size > 0)
