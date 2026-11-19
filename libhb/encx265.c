@@ -269,6 +269,25 @@ int encx265Init(hb_work_object_t *w, hb_job_t *job)
         }
     }
 
+    const char *frame_packing = NULL;
+    if (job->stereo_3d.type == HB_STEREO3D_SIDEBYSIDE)
+    {
+        frame_packing = "3";
+    }
+    else if (job->stereo_3d.type == HB_STEREO3D_TOPBOTTOM)
+    {
+        frame_packing = "4";
+    }
+    else if (job->stereo_3d.type == HB_STEREO3D_FRAMESEQUENCE)
+    {
+        frame_packing = "5";
+    }
+    if (frame_packing != NULL && param_parse(pv, param, "frame-packing", frame_packing))
+    {
+        hb_error("encx265: frame packing is not supported by this x265 library");
+        goto fail;
+    }
+
     if (job->ambient.ambient_illuminance.num && job->ambient.ambient_illuminance.den)
     {
         param->ambientIlluminance = hb_rescale_rational(job->ambient.ambient_illuminance, 10000);
