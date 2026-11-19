@@ -20,7 +20,7 @@ if hb_dir == ''
   hb_dir = meson.current_build_dir() / '..'
 endif
 
-hb_incdirs = include_directories(hb_dir / 'libhb', hb_dir / 'contrib/include')
+hb_incdirs = include_directories(hb_dir / 'libhb')
 
 # External dependencies (required)
 ghb_deps = [
@@ -51,6 +51,7 @@ ghb_deps = [
   dependency('vorbis'),
   dependency('vorbisenc'),
   dependency('x264'),
+  dependency('zlib'),
 ]
 
 if get_option('libdovi').enabled()
@@ -63,6 +64,8 @@ endif
 
 if get_option('qsv').enabled()
   ghb_deps += dependency('vpl')
+  ghb_deps += dependency('libva')
+  ghb_deps += dependency('libva-drm')
 endif
 
 if get_option('x265').enabled()

@@ -1,7 +1,7 @@
 __deps__ := BZIP2 LIBVPX SVT-AV1 FFMPEG FREETYPE LAME LIBASS \
     LIBDVDREAD LIBDVDNAV LIBICONV LIBTHEORA LIBVORBIS LIBOGG \
     X264 X265 ZLIB LIBBLURAY FDKAAC LIBVPL LIBGNURX JANSSON \
-    HARFBUZZ LIBOPUS LIBSPEEX LIBDAV1D LIBJPEGTURBO LIBDOVI
+    HARFBUZZ LIBOPUS LIBSPEEX LIBDOVI
 
 ifeq (,$(filter $(HOST.system),darwin cygwin mingw))
     __deps__ += FONTCONFIG
@@ -55,7 +55,7 @@ ifeq (1,$(FEATURE.qsv))
     ifeq ($(HOST.system),freebsd)
         LIBHB.GCC.I += $(LOCALBASE)/include/vpl
     else
-        LIBHB.GCC.I += $(CONTRIB.build/)include/vpl
+        LIBHB.GCC.I += $(LOCALBASE)/include/vpl
     endif
 endif
 
@@ -118,25 +118,15 @@ LIBHB.lib = $(LIBHB.build/)hb.lib
 LIBHB.dll.libs = $(foreach n, \
         ass avformat avfilter avcodec avutil swresample dvdnav dvdread \
         freetype mp3lame swscale vpx theora vorbis vorbisenc ogg x264 \
-        bluray jansson harfbuzz opus speex dav1d turbojpeg zimg SvtAv1Enc, \
+        bluray jansson harfbuzz opus speex SvtAv1Enc, \
         $(CONTRIB.build/)lib/lib$(n).a )
 
-ifeq (1,$(FEATURE.fdk_aac))
-LIBHB.dll.libs += $(CONTRIB.build/)lib/libfdk-aac.a
-endif
 
 ifeq (1,$(FEATURE.qsv))
 LIBHB.GCC.D += ONEVPL_EXPERIMENTAL
 LIBHB.dll.libs += $(CONTRIB.build/)lib/libvpl.a
 endif
 
-ifeq (1,$(FEATURE.x265))
-LIBHB.dll.libs += $(CONTRIB.build/)lib/libx265.a
-endif
-
-ifeq (1,$(FEATURE.libdovi))
-LIBHB.dll.libs += $(CONTRIB.build/)lib/libdovi.a
-endif
 
 ifneq ($(HAS.iconv),1)
 LIBHB.dll.libs += $(CONTRIB.build/)lib/libiconv.a

@@ -25,6 +25,19 @@ TEST.pkgconfig_libs += $(foreach m,$(MODULES.NAMES),$($m.OSL.libs))
 ifeq (1,$(FEATURE.flatpak))
     TEST.pkgconfig_libs += glib-2.0
 endif
+ifeq (1,$(FEATURE.x265))
+    TEST.pkgconfig_libs += x265
+endif
+ifeq (1,$(FEATURE.qsv))
+  TEST.pkgconfig_libs += libva libva-drm vpl
+endif
+
+ifeq (1,$(FEATURE.fdk_aac))
+    TEST.pkgconfig_libs += fdk-aac
+endif
+ifeq (1,$(FEATURE.libdovi))
+    TEST.pkgconfig_libs += dovi
+endif
 
 TEST.GCC.pkgconfig = $(shell $(TEST.PKGCONFIG.exe) --libs $(TEST.pkgconfig_libs))
 
