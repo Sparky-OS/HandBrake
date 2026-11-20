@@ -570,7 +570,7 @@ set_preview_image_static (signal_user_data_t *ud, GdkPixbuf * pix)
         gtk_picture_set_pixbuf(GTK_PICTURE(widget), pix);
         widget = ghb_builder_widget("preview_image");
         gtk_picture_set_pixbuf(GTK_PICTURE(widget), pix);
-        ghb_stereo_preview_still(ud, pix);
+        ghb_stereo_preview_still(ud, pix, ud->preview->frame);
     }
 }
 

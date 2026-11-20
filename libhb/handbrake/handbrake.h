@@ -77,6 +77,13 @@ int hb_detect_comb( hb_buffer_t * buf,int color_equal, int color_diff,
 #define HB_PREVIEW_FORMAT_YUV 0
 #define HB_PREVIEW_FORMAT_JPG 1
 
+/* The scan also keeps the picture decoded after each preview, as preview
+ * number preview + HB_PREVIEW_NEIGHBOUR (read it with hb_get_preview3()):
+ * the other view of a source whose views come in turn. It reads at most
+ * HB_PREVIEW_NEIGHBOUR_PACKETS video packets more for it. */
+#define HB_PREVIEW_NEIGHBOUR          1000
+#define HB_PREVIEW_NEIGHBOUR_PACKETS  64
+
 int           hb_save_preview( hb_handle_t * h, int title, int preview,
                                hb_buffer_t *buf, int format );
 hb_buffer_t * hb_read_preview( hb_handle_t * h, hb_title_t *title,

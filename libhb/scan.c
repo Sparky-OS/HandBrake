@@ -823,6 +823,11 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
         frames = 0;
 
         hb_buffer_t * vid_buf = NULL, * last_vid_buf = NULL;
+        // The picture decoded after the preview: the other view of a
+        // source whose views come in turn (frames in turn, both views in
+        // one block), for a stereo preview.
+        hb_buffer_t * neighbour = NULL;
+        int           neighbour_packets = 0;
 
         int packets = 0;
         vid_decoder->frame_count = 0;
@@ -915,6 +920,12 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
                         frames++;
                     }
                 }
+                else if (buf_es->s.id == title->video_id && neighbour == NULL &&
+                         neighbour_packets < HB_PREVIEW_NEIGHBOUR_PACKETS)
+                {
+                    neighbour_packets++;
+                    vid_decoder->work( vid_decoder, &buf_es, &neighbour );
+                }
                 else if (!AllAudioOK(title) && !abort_audio)
                 {
                     hb_audio_t * audio = find_audio_for_id(title, buf_es->s.id);
@@ -928,7 +939,9 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
                     hb_buffer_close( &buf_es );
             }
 
-            if (vid_buf && (abort_audio || AllAudioOK(title)))
+            if (vid_buf && (neighbour != NULL ||
+                            neighbour_packets >= HB_PREVIEW_NEIGHBOUR_PACKETS) &&
+                (abort_audio || AllAudioOK(title)))
                 break;
         }
         hb_buffer_list_close(&list_es);
@@ -957,6 +970,7 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
              */
             hb_log( "scan: could not get a video information" );
             hb_buffer_close( &vid_buf );
+            hb_buffer_close( &neighbour );
             continue;
         }
 
@@ -965,6 +979,7 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
         {
             hb_log( "scan: video geometry information does not match buffer" );
             hb_buffer_close( &vid_buf );
+            hb_buffer_close( &neighbour );
             continue;
         }
         remember_info( info_list, &vid_info );
@@ -979,7 +994,16 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
         if( data->store_previews )
         {
             hb_save_preview( data->h, title->index, i, vid_buf, HB_PREVIEW_FORMAT_JPG );
+            if (neighbour != NULL &&
+                neighbour->f.width  == vid_buf->f.width &&
+                neighbour->f.height == vid_buf->f.height)
+            {
+                hb_save_preview( data->h, title->index,
+                                 i + HB_PREVIEW_NEIGHBOUR, neighbour,
+                                 HB_PREVIEW_FORMAT_JPG );
+            }
         }
+        hb_buffer_close( &neighbour );
 
         /* Detect black borders */
 
@@ -1065,6 +1089,7 @@ skip_preview:
         if (vid_buf)
         {
             hb_buffer_close( &vid_buf );
+            hb_buffer_close( &neighbour );
         }
         if (abort)
         {

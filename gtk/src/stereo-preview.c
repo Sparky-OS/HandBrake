@@ -26,8 +26,16 @@ typedef struct
     GtkWidget *picture, *area, *menu, *message;
     char *path;
     int scan_layout, scan_order;
-    GdkTexture *still;
+    GdkTexture *still, *still_next;
+    /* the still's preview number, and whether its neighbour was asked for (it is read only when needed) */
+    signal_user_data_t *ud;
+    int still_index;
+    gboolean still_next_read;
     GtkMediaStream *video;
+    /* a packing whose views come in turn: the first view of the pair being played, its frame number */
+    GdkTexture *live_first;
+    gint64 live_first_index;
+    int rate_num, rate_den;
     gulong video_handler;
     gboolean live;
 } stereo_preview_t;
@@ -99,7 +107,9 @@ static void set_box (gboolean pair, double aspect)
     gtk_widget_set_visible(sp->area, pair);
 }
 
-static void present (GdkTexture *frame, double aspect)
+/* frame is the picture shown; second, when there is one, the picture decoded after it (the other view of a
+ * packing whose views come in turn) */
+static void present (GdkTexture *frame, GdkTexture *second, double aspect)
 {
     int layout, order, anaglyph;
     GdkTexture *left = NULL, *right = NULL;
@@ -116,7 +126,22 @@ static void present (GdkTexture *frame, double aspect)
         show_message(NULL);
         return;
     }
-    if (!stereo_gtk_unpack(frame, layout, order, anaglyph, &left, &right, &error))
+    gboolean unpacked;
+    if (stereo_gtk_layout_needs_two_pictures(layout) && frame == sp->still && second == NULL && !sp->still_next_read)
+    {
+        sp->still_next_read = TRUE;
+        GdkPixbuf *next = ghb_get_preview_neighbour(sp->still_index, sp->ud);
+        if (next)
+        {
+            sp->still_next = second = gdk_texture_new_for_pixbuf(next);
+            g_object_unref(next);
+        }
+    }
+    if (stereo_gtk_layout_needs_two_pictures(layout) && second != NULL)
+        unpacked = stereo_gtk_unpack_pair(frame, second, layout, order, &left, &right, &error);
+    else
+        unpacked = stereo_gtk_unpack(frame, layout, order, anaglyph, &left, &right, &error);
+    if (!unpacked)
     {
         set_box(FALSE, aspect);
         show_message(error->message);
@@ -132,12 +157,42 @@ static void present (GdkTexture *frame, double aspect)
     g_object_unref(right);
 }
 
+/* The clip's frame number, from the stream's time and the source's frame rate. */
+static gint64 live_index (void)
+{
+    if (sp->rate_num <= 0 || sp->rate_den <= 0)
+        return -1;
+    gint64 us = gtk_media_stream_get_timestamp(sp->video);
+    return (us * sp->rate_num + sp->rate_den * G_GINT64_CONSTANT(500000)) / (sp->rate_den * G_GINT64_CONSTANT(1000000));
+}
+
 static void live_frame (GdkPaintable *paintable, gpointer data)
 {
     (void)data;
     g_autoptr(GdkPaintable) image = gdk_paintable_get_current_image(paintable);
-    if (GDK_IS_TEXTURE(image))
-        present(GDK_TEXTURE(image), gdk_paintable_get_intrinsic_aspect_ratio(paintable));
+    if (!GDK_IS_TEXTURE(image))
+        return;
+    double aspect = gdk_paintable_get_intrinsic_aspect_ratio(paintable);
+    int layout, order, anaglyph;
+    int width = gdk_texture_get_width(GDK_TEXTURE(image)), height = gdk_texture_get_height(GDK_TEXTURE(image));
+    if (decide(width, height, aspect > 0 ? aspect : (double)width / height, &layout, &order, &anaglyph) &&
+        stereo_gtk_layout_needs_two_pictures(layout))
+    {
+        /* views in turn: an even frame opens a pair, the odd frame after it closes it */
+        gint64 index = live_index();
+        if (index >= 0 && index % 2 == 0)
+        {
+            g_set_object(&sp->live_first, GDK_TEXTURE(image));
+            sp->live_first_index = index;
+            return;
+        }
+        if (index < 0 || sp->live_first == NULL || sp->live_first_index != index - 1)
+            return;
+        present(sp->live_first, GDK_TEXTURE(image), aspect);
+        g_clear_object(&sp->live_first);
+        return;
+    }
+    present(GDK_TEXTURE(image), NULL, aspect);
 }
 
 static void refresh (void)
@@ -145,7 +200,7 @@ static void refresh (void)
     if (sp->live && sp->video)
         live_frame(GDK_PAINTABLE(sp->video), NULL);
     else
-        present(sp->still, 0);
+        present(sp->still, sp->still_next, 0);
 }
 
 static void file_changed (GtkWidget *button, int error_number, gpointer data)
@@ -215,6 +270,8 @@ static void set_source (signal_user_data_t *ud)
     const char *path = title ? title->path : NULL;
 
     sp->scan_layout = title ? layout_from_scan(title->stereo_3d.type) : STEREO_POLICY_LAYOUT_NONE;
+    sp->rate_num = title ? title->vrate.num : 0;
+    sp->rate_den = title ? title->vrate.den : 0;
     sp->scan_order = title && (title->stereo_3d.flags & GHB_STEREO_INVERT) ? STEREO_POLICY_RIGHT_FIRST
                                                                          : STEREO_POLICY_LEFT_FIRST;
     if (g_strcmp0(path, sp->path) == 0)
@@ -230,15 +287,19 @@ static void set_source (signal_user_data_t *ud)
                                   sp->scan_layout != STEREO_POLICY_LAYOUT_NONE || shape || entry);
 }
 
-void ghb_stereo_preview_still (signal_user_data_t *ud, GdkPixbuf *pix)
+void ghb_stereo_preview_still (signal_user_data_t *ud, GdkPixbuf *pix, int index)
 {
     init();
     set_source(ud);
     g_clear_object(&sp->still);
+    g_clear_object(&sp->still_next);
+    sp->ud = ud;
+    sp->still_index = index;
+    sp->still_next_read = FALSE;
     if (pix)
         sp->still = gdk_texture_new_for_pixbuf(pix);
     if (!sp->live)
-        present(sp->still, 0);
+        present(sp->still, sp->still_next, 0);
 }
 
 void ghb_stereo_preview_live (signal_user_data_t *ud, GtkMediaStream *video, gboolean playing)
@@ -250,6 +311,7 @@ void ghb_stereo_preview_live (signal_user_data_t *ud, GtkMediaStream *video, gbo
     sp->video_handler = 0;
     sp->video = video;
     sp->live = playing;
+    g_clear_object(&sp->live_first);
     if (playing && video)
         sp->video_handler = g_signal_connect(video, "invalidate-contents", G_CALLBACK(live_frame), NULL);
     refresh();

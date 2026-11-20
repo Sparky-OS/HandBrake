@@ -4906,10 +4906,31 @@ ghb_pause_resume_queue (void)
     }
 }
 
+static GdkPixbuf* get_preview_pixbuf(gint picture, signal_user_data_t *ud, gboolean black);
+
 GdkPixbuf*
 ghb_get_preview_image(
     gint index,
     signal_user_data_t *ud)
+{
+    return get_preview_pixbuf(index, ud, TRUE);
+}
+
+// The picture the scan decoded after preview index: the other view of a
+// source whose views come in turn. NULL when the scan kept none.
+GdkPixbuf*
+ghb_get_preview_neighbour(
+    gint index,
+    signal_user_data_t *ud)
+{
+    return get_preview_pixbuf(index + HB_PREVIEW_NEIGHBOUR, ud, FALSE);
+}
+
+static GdkPixbuf*
+get_preview_pixbuf(
+    gint index,
+    signal_user_data_t *ud,
+    gboolean black)
 {
     GhbValue * settings, * job;
 
@@ -4925,6 +4946,10 @@ ghb_get_preview_image(
     }
     ghb_value_free(&settings);
 
+    if (image == NULL && !black)
+    {
+        return NULL;
+    }
     if (image == NULL)
     {
         preview = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, 854, 480);
