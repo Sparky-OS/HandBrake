@@ -3789,3 +3789,8 @@ msgstr ""
 #, c-format
 msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
 msgstr ""
+
+#: gtk/src/stereo-preview.c
+msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
+msgstr ""
+

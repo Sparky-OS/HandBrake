@@ -18,3 +18,8 @@ msgstr "Kodera AAC Fraunhofera nie ma w FFmpeg tego komputera"
 #, c-format
 msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
 msgstr "Sparky Stereo OS nie może przekazywać FFmpeg zbudowanego z nim, więc buduje się go na Twoim komputerze: zainstaluj sparky-stereo-ffmpeg-fdk, a potem uruchom sparky-stereo-ffmpeg-fdk w terminalu; najpierw wyjaśni i zapyta. Do tego czasu zadanie z %s się nie rozpocznie."
+
+#: gtk/src/stereo-preview.c
+msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
+msgstr "Początek tego klipu w źródle nie jest znany, więc jego naprzemienne widoki nie mogą zostać połączone w pary: naciśnij odtwarzanie, aby zakodować go ponownie."
+

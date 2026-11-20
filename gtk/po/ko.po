@@ -3965,3 +3965,8 @@ msgstr "이 컴퓨터의 FFmpeg에는 Fraunhofer AAC 인코더가 없습니다"
 #, c-format
 msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
 msgstr "Sparky Stereo OS는 이 인코더를 포함해 빌드한 FFmpeg를 배포할 수 없으므로 사용자의 컴퓨터에서 직접 빌드합니다. sparky-stereo-ffmpeg-fdk를 설치한 다음 터미널에서 sparky-stereo-ffmpeg-fdk를 실행하세요. 먼저 설명하고 확인을 받습니다. 그때까지 %s를 사용하는 작업은 시작되지 않습니다."
+
+#: gtk/src/stereo-preview.c
+msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
+msgstr "소스에서 이 클립의 시작 위치를 알 수 없어 번갈아 나오는 뷰를 짝지을 수 없습니다. 재생을 눌러 다시 인코딩하세요."
+

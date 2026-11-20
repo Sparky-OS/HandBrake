@@ -337,7 +337,7 @@ live_preview_start_new (signal_user_data_t *ud)
         GtkPicture *preview_image = GTK_PICTURE(ghb_builder_widget("preview_image"));
         gtk_media_file_set_filename(GTK_MEDIA_FILE(ud->preview->video), ud->preview->current);
         gtk_picture_set_paintable(preview_image, GDK_PAINTABLE(ud->preview->video));
-        ghb_stereo_preview_live(ud, ud->preview->video, TRUE);
+        ghb_stereo_preview_live(ud, ud->preview->video, TRUE, ud->preview->frame);
         live_preview_play(ud);
     }
 }
@@ -373,7 +373,7 @@ live_preview_stop (void)
 
     live_preview_pause(ud);
     gtk_media_file_clear(GTK_MEDIA_FILE(ud->preview->video));
-    ghb_stereo_preview_live(ud, NULL, FALSE);
+    ghb_stereo_preview_live(ud, NULL, FALSE, -1);
     live_preview_set_state(PREVIEW_STATE_STOPPED);
 
     progress = GTK_RANGE(ghb_builder_widget("live_preview_progress"));
@@ -415,7 +415,8 @@ live_preview_play_clicked_cb (GtkWidget *widget, gpointer data)
     ud->preview->current = name;
 
     if (ud->preview->encoded[frame] &&
-        g_file_test(name, G_FILE_TEST_IS_REGULAR))
+        g_file_test(name, G_FILE_TEST_IS_REGULAR) &&
+        ghb_stereo_preview_clip_known(frame))
     {
         live_preview_toggle_playback(ud);
     }
@@ -432,12 +433,15 @@ live_preview_play_clicked_cb (GtkWidget *widget, gpointer data)
         dest = ghb_get_job_dest_settings(js);
 
         ghb_dict_set_string(dest, "File", name);
-        ghb_dict_set_string(range, "Type", "preview");
-        ghb_dict_set_int(range, "Start", ud->preview->frame + 1);
-        ghb_dict_set_int(range, "End",
-            ghb_dict_get_int(ud->prefs, "live_duration") * 90000);
-        ghb_dict_set_int(range, "SeekPoints",
-            ghb_dict_get_int(ud->prefs, "preview_count"));
+        if (!ghb_stereo_preview_live_range(ud, ud->preview->frame, range))
+        {
+            ghb_dict_set_string(range, "Type", "preview");
+            ghb_dict_set_int(range, "Start", ud->preview->frame + 1);
+            ghb_dict_set_int(range, "End",
+                ghb_dict_get_int(ud->prefs, "live_duration") * 90000);
+            ghb_dict_set_int(range, "SeekPoints",
+                ghb_dict_get_int(ud->prefs, "preview_count"));
+        }
 
         GhbValue *job_dict = ghb_dict_get(js, "Job");
         ud->preview->live_id = ghb_add_job(ghb_live_handle(), job_dict);

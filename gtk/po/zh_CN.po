@@ -4070,3 +4070,8 @@ msgstr "此计算机的 FFmpeg 中没有 Fraunhofer 的 AAC 编码器"
 #, c-format
 msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
 msgstr "Sparky Stereo OS 不得分发包含该编码器构建的 FFmpeg，因此需要在您自己的计算机上构建：请安装 sparky-stereo-ffmpeg-fdk，然后在终端中运行 sparky-stereo-ffmpeg-fdk；它会先说明并征求同意。在此之前，使用 %s 的任务不会开始。"
+
+#: gtk/src/stereo-preview.c
+msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
+msgstr "此片段在源中的起始位置未知，因此无法将其交替出现的视图配对：请按播放重新编码。"
+

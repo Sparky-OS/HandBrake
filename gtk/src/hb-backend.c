@@ -4916,13 +4916,20 @@ ghb_get_preview_image(
     return get_preview_pixbuf(index, ud, TRUE);
 }
 
-// The picture the scan decoded after preview index: the other view of a
-// source whose views come in turn. NULL when the scan kept none.
+// The other picture of preview index's pair of views in turn, counted from
+// the source's first frame; *before says it comes before the preview in the
+// source. NULL when the scan kept none.
 GdkPixbuf*
 ghb_get_preview_neighbour(
     gint index,
-    signal_user_data_t *ud)
+    signal_user_data_t *ud,
+    gboolean *before)
 {
+    gint title_id = ghb_dict_get_int(ud->settings, "title"), title_index;
+    const hb_title_t *title = ghb_lookup_title(title_id, &title_index);
+
+    *before = title != NULL && index >= 0 && index < 64 &&
+              (title->preview_partner_before & (UINT64_C(1) << index));
     return get_preview_pixbuf(index + HB_PREVIEW_NEIGHBOUR, ud, FALSE);
 }
 

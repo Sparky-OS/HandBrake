@@ -1402,6 +1402,10 @@ struct hb_title_s
 
     hb_spherical_mapping_t spherical_mapping;
     hb_stereo_3d_t stereo_3d;
+    /* Bit i: the picture kept as preview i + HB_PREVIEW_NEIGHBOUR is the one
+     * decoded before preview i, which is then the second picture of its pair
+     * of views in turn; clear: the one decoded after it. */
+    uint64_t        preview_partner_before;
 
     hb_rational_t   vrate;
     int             crop[4];

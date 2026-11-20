@@ -4155,3 +4155,8 @@ msgstr "L'encodeur AAC de Fraunhofer n'est pas dans le FFmpeg de cet ordinateur"
 #, c-format
 msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
 msgstr "Sparky Stereo OS ne peut pas redistribuer un FFmpeg compilé avec lui, il est donc compilé sur votre propre ordinateur : installez sparky-stereo-ffmpeg-fdk, puis lancez sparky-stereo-ffmpeg-fdk dans un terminal ; il explique et demande d'abord. D'ici là, une tâche avec %s ne démarre pas."
+
+#: gtk/src/stereo-preview.c
+msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
+msgstr "Le début de cet extrait dans la source n'est pas connu, ses vues alternées ne peuvent donc pas être appariées : appuyez sur lecture pour l'encoder à nouveau."
+

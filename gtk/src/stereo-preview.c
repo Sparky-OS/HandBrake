@@ -15,7 +15,9 @@
 #include "callbacks.h"
 #include "handbrake/handbrake.h"
 #include "hb-backend.h"
+#include "preview.h"
 
+#include <math.h>
 #include <stereo-gtk.h>
 
 /* AV_STEREO3D_FLAG_INVERT of libavutil/stereo3d.h, carried as is in hb_stereo_3d_t.flags */
@@ -27,15 +29,20 @@ typedef struct
     char *path;
     int scan_layout, scan_order;
     GdkTexture *still, *still_next;
-    /* the still's preview number, and whether its neighbour was asked for (it is read only when needed) */
+    /* the still's preview number, whether the other picture of its pair was asked for (it is read only when
+     * needed), and whether that picture comes before the still in the source */
     signal_user_data_t *ud;
     int still_index;
-    gboolean still_next_read;
+    gboolean still_next_read, still_next_before;
     GtkMediaStream *video;
-    /* a packing whose views come in turn: the first view of the pair being played, its frame number */
+    /* a packing whose views come in turn: the first view of the pair being played and its frame number in the
+     * source; the source frame each preview's clip starts at (-1: not known) */
     GdkTexture *live_first;
     gint64 live_first_index;
+    gint64 live_start[GHB_PREVIEW_MAX];
+    int live_preview;
     int rate_num, rate_den;
+    guint64 duration;
     gulong video_handler;
     gboolean live;
 } stereo_preview_t;
@@ -130,15 +137,19 @@ static void present (GdkTexture *frame, GdkTexture *second, double aspect)
     if (stereo_gtk_layout_needs_two_pictures(layout) && frame == sp->still && second == NULL && !sp->still_next_read)
     {
         sp->still_next_read = TRUE;
-        GdkPixbuf *next = ghb_get_preview_neighbour(sp->still_index, sp->ud);
+        GdkPixbuf *next = ghb_get_preview_neighbour(sp->still_index, sp->ud, &sp->still_next_before);
         if (next)
         {
             sp->still_next = second = gdk_texture_new_for_pixbuf(next);
             g_object_unref(next);
         }
     }
+    /* pairs are counted from the source's first frame: the still is the second picture of its pair when the
+     * scan kept the picture before it */
+    gboolean swap_pair = frame == sp->still && second == sp->still_next && sp->still_next_before;
     if (stereo_gtk_layout_needs_two_pictures(layout) && second != NULL)
-        unpacked = stereo_gtk_unpack_pair(frame, second, layout, order, &left, &right, &error);
+        unpacked = stereo_gtk_unpack_pair(swap_pair ? second : frame, swap_pair ? frame : second,
+                                          layout, order, &left, &right, &error);
     else
         unpacked = stereo_gtk_unpack(frame, layout, order, anaglyph, &left, &right, &error);
     if (!unpacked)
@@ -157,13 +168,16 @@ static void present (GdkTexture *frame, GdkTexture *second, double aspect)
     g_object_unref(right);
 }
 
-/* The clip's frame number, from the stream's time and the source's frame rate. */
+/* The played picture's frame number in the source: the source frame the clip starts at, plus the clip's own frame
+ * number from the stream's time and the source's frame rate; -1 when the clip's start is not known. */
 static gint64 live_index (void)
 {
-    if (sp->rate_num <= 0 || sp->rate_den <= 0)
+    if (sp->rate_num <= 0 || sp->rate_den <= 0 || sp->live_preview < 0 || sp->live_preview >= GHB_PREVIEW_MAX ||
+        sp->live_start[sp->live_preview] < 0)
         return -1;
     gint64 us = gtk_media_stream_get_timestamp(sp->video);
-    return (us * sp->rate_num + sp->rate_den * G_GINT64_CONSTANT(500000)) / (sp->rate_den * G_GINT64_CONSTANT(1000000));
+    return sp->live_start[sp->live_preview] +
+           (us * sp->rate_num + sp->rate_den * G_GINT64_CONSTANT(500000)) / (sp->rate_den * G_GINT64_CONSTANT(1000000));
 }
 
 static void live_frame (GdkPaintable *paintable, gpointer data)
@@ -178,15 +192,23 @@ static void live_frame (GdkPaintable *paintable, gpointer data)
     if (decide(width, height, aspect > 0 ? aspect : (double)width / height, &layout, &order, &anaglyph) &&
         stereo_gtk_layout_needs_two_pictures(layout))
     {
-        /* views in turn: an even frame opens a pair, the odd frame after it closes it */
+        /* views in turn, counted from the source's first frame: an even frame opens a pair, the odd frame after
+         * it closes it */
         gint64 index = live_index();
-        if (index >= 0 && index % 2 == 0)
+        if (index < 0)
+        {
+            set_box(FALSE, aspect);
+            show_message(_("The start of this clip in the source is not known, so its views in turn cannot be paired: "
+                           "press play to encode it again."));
+            return;
+        }
+        if (index % 2 == 0)
         {
             g_set_object(&sp->live_first, GDK_TEXTURE(image));
             sp->live_first_index = index;
             return;
         }
-        if (index < 0 || sp->live_first == NULL || sp->live_first_index != index - 1)
+        if (sp->live_first == NULL || sp->live_first_index != index - 1)
             return;
         present(sp->live_first, GDK_TEXTURE(image), aspect);
         g_clear_object(&sp->live_first);
@@ -241,6 +263,9 @@ static void init (void)
     gtk_aspect_frame_set_child(GTK_ASPECT_FRAME(frame), NULL);
     gtk_overlay_set_child(GTK_OVERLAY(overlay), sp->picture);
     g_object_unref(sp->picture);
+    for (int i = 0; i < GHB_PREVIEW_MAX; i++)
+        sp->live_start[i] = -1;
+    sp->live_preview = -1;
     sp->area = stereo_gtk_area_new();
     gtk_widget_set_can_target(sp->area, FALSE);
     gtk_widget_set_visible(sp->area, FALSE);
@@ -272,6 +297,7 @@ static void set_source (signal_user_data_t *ud)
     sp->scan_layout = title ? layout_from_scan(title->stereo_3d.type) : STEREO_POLICY_LAYOUT_NONE;
     sp->rate_num = title ? title->vrate.num : 0;
     sp->rate_den = title ? title->vrate.den : 0;
+    sp->duration = title ? title->duration : 0;
     sp->scan_order = title && (title->stereo_3d.flags & GHB_STEREO_INVERT) ? STEREO_POLICY_RIGHT_FIRST
                                                                          : STEREO_POLICY_LEFT_FIRST;
     if (g_strcmp0(path, sp->path) == 0)
@@ -302,10 +328,42 @@ void ghb_stereo_preview_still (signal_user_data_t *ud, GdkPixbuf *pix, int index
         present(sp->still, sp->still_next, 0);
 }
 
-void ghb_stereo_preview_live (signal_user_data_t *ud, GtkMediaStream *video, gboolean playing)
+gboolean ghb_stereo_preview_live_range (signal_user_data_t *ud, int preview, GhbValue *range)
 {
     init();
     set_source(ud);
+    if (preview < 0 || preview >= GHB_PREVIEW_MAX)
+        return FALSE;
+    sp->live_start[preview] = -1;
+    if (!gtk_widget_get_visible(sp->menu) || sp->rate_num <= 0 || sp->rate_den <= 0 || sp->duration == 0)
+        return FALSE;
+    /* Where HandBrake's own preview clip starts (the preview's place in the title), moved to a frame boundary, so
+     * every played picture's frame number in the source is known: a packing whose views come in turn is paired
+     * from the source's first frame, never from the clip's. */
+    int count = ghb_dict_get_int(ud->prefs, "preview_count");
+    double frame_ticks = 90000.0 * sp->rate_den / sp->rate_num;
+    double at = (double)sp->duration * preview / (count + 1);
+    gint64 first = (gint64)floor(at / frame_ticks);
+    gint64 start = first > 0 ? llround((first - 0.5) * frame_ticks) : 0;
+    ghb_dict_set_string(range, "Type", "time");
+    ghb_dict_set_int(range, "Start", start);
+    ghb_dict_set_int(range, "End", start + ghb_dict_get_int(ud->prefs, "live_duration") * 90000);
+    sp->live_start[preview] = first;
+    ghb_log("Preview: the clip of preview %d starts at frame %" G_GINT64_FORMAT " of the source", preview + 1, first);
+    return TRUE;
+}
+
+gboolean ghb_stereo_preview_clip_known (int preview)
+{
+    return sp == NULL || !gtk_widget_get_visible(sp->menu) ||
+           (preview >= 0 && preview < GHB_PREVIEW_MAX && sp->live_start[preview] >= 0);
+}
+
+void ghb_stereo_preview_live (signal_user_data_t *ud, GtkMediaStream *video, gboolean playing, int preview)
+{
+    init();
+    set_source(ud);
+    sp->live_preview = preview;
     if (sp->video && sp->video_handler)
         g_signal_handler_disconnect(sp->video, sp->video_handler);
     sp->video_handler = 0;

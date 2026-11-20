@@ -83,9 +83,12 @@ hb_buffer_t * hb_read_preview( hb_handle_t * h, hb_title_t *title,
                                int preview, int format );
 #endif // __LIBHB__
 
-/* The scan also keeps the picture decoded after each preview, as preview
- * number preview + HB_PREVIEW_NEIGHBOUR (read it with hb_get_preview3()):
- * the other view of a source whose views come in turn. It reads at most
+/* The scan also keeps the other picture of each preview's pair of views in
+ * turn, as preview number preview + HB_PREVIEW_NEIGHBOUR (read it with
+ * hb_get_preview3()): pairs are counted from the source's first frame, so it
+ * is the picture decoded after the preview when the preview's frame number is
+ * even, and the one decoded before it (bit preview of the title's
+ * preview_partner_before) when it is odd. It reads at most
  * HB_PREVIEW_NEIGHBOUR_PACKETS video packets more for it. */
 #define HB_PREVIEW_NEIGHBOUR          1000
 #define HB_PREVIEW_NEIGHBOUR_PACKETS  64

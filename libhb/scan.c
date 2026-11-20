@@ -648,6 +648,73 @@ static hb_buffer_t * read_buf(hb_scan_t * data, hb_stream_t * stream)
  * It assumes that data->reader and data->vts have successfully been
  * DVDOpen()ed and ifoOpen()ed.
  **********************************************************************/
+/*
+ * A decoded picture's frame number, counted from the source's first frame,
+ * or -1 when it is not known: only a stream read through libavformat gives
+ * timestamps from the start of the source.
+ */
+static int64_t preview_frame_number( hb_title_t * title, hb_buffer_t * buf,
+                                     hb_work_info_t * info )
+{
+    if (buf == NULL || title->type != HB_FF_STREAM_TYPE ||
+        buf->s.start == AV_NOPTS_VALUE || buf->s.start < 0 ||
+        info->rate.num <= 0 || info->rate.den <= 0)
+    {
+        return -1;
+    }
+    return llround((double)buf->s.start * info->rate.num /
+                   ((double)info->rate.den * 90000));
+}
+
+/*
+ * The other picture of a preview's pair of views in turn (frames in turn,
+ * both views in one block). Pairs are counted from the source's first frame
+ * (H.264 and H.265 frame packing type 5, Matroska StereoMode 13 and 14), so
+ * an even frame's partner is the picture after it and an odd frame's the
+ * picture before it; the preview's own place never decides the pair.
+ */
+static hb_buffer_t * preview_partner( hb_title_t * title, int index,
+                                      hb_buffer_t * preview, hb_buffer_t * before,
+                                      hb_buffer_t * after, hb_work_info_t * info )
+{
+    int64_t number = preview_frame_number(title, preview, info);
+    hb_buffer_t * partner;
+
+    if (number < 0)
+    {
+        hb_log("scan: preview %d: its frame number in the source is not known, "
+               "so the other view of a packing whose views come in turn is "
+               "not kept", index + 1);
+        return NULL;
+    }
+    if (number % 2 == 0)
+    {
+        partner = after;
+    }
+    else if (index < 64)
+    {
+        partner = before;
+    }
+    else
+    {
+        partner = NULL;
+    }
+    if (partner == NULL ||
+        partner->f.width  != preview->f.width ||
+        partner->f.height != preview->f.height ||
+        preview_frame_number(title, partner, info) != (number % 2 ? number - 1 : number + 1))
+    {
+        hb_log("scan: preview %d (frame %"PRId64"): the other picture of its "
+               "pair of views in turn was not decoded", index + 1, number);
+        return NULL;
+    }
+    if (partner == before)
+    {
+        title->preview_partner_before |= UINT64_C(1) << index;
+    }
+    return partner;
+}
+
 static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
 {
     int                i, npreviews = 0, abort = 0;
@@ -740,6 +807,7 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
         return 0;
     }
 
+    title->preview_partner_before = 0;
     for( i = 0; i < data->preview_count; i++ )
     {
         int j;
@@ -828,6 +896,9 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
         // one block), for a stereo preview.
         hb_buffer_t * neighbour = NULL;
         int           neighbour_packets = 0;
+        // The picture decoded before the preview: the other view of a
+        // preview that is the second picture of its pair of views in turn.
+        hb_buffer_t * before = NULL;
 
         int packets = 0;
         vid_decoder->frame_count = 0;
@@ -951,11 +1022,14 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
             vid_buf = last_vid_buf;
             last_vid_buf = NULL;
         }
-        hb_buffer_close(&last_vid_buf);
+        before = last_vid_buf;
+        last_vid_buf = NULL;
 
         if (vid_buf == NULL)
         {
             hb_log( "scan: could not get a decoded picture" );
+            hb_buffer_close( &before );
+            hb_buffer_close( &neighbour );
             continue;
         }
 
@@ -971,6 +1045,7 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
             hb_log( "scan: could not get a video information" );
             hb_buffer_close( &vid_buf );
             hb_buffer_close( &neighbour );
+            hb_buffer_close( &before );
             continue;
         }
 
@@ -980,6 +1055,7 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
             hb_log( "scan: video geometry information does not match buffer" );
             hb_buffer_close( &vid_buf );
             hb_buffer_close( &neighbour );
+            hb_buffer_close( &before );
             continue;
         }
         remember_info( info_list, &vid_info );
@@ -994,16 +1070,17 @@ static int DecodePreviews( hb_scan_t * data, hb_title_t * title, int flush )
         if( data->store_previews )
         {
             hb_save_preview( data->h, title->index, i, vid_buf, HB_PREVIEW_FORMAT_JPG );
-            if (neighbour != NULL &&
-                neighbour->f.width  == vid_buf->f.width &&
-                neighbour->f.height == vid_buf->f.height)
+            hb_buffer_t * partner = preview_partner(title, i, vid_buf, before,
+                                                    neighbour, &vid_info);
+            if (partner != NULL)
             {
                 hb_save_preview( data->h, title->index,
-                                 i + HB_PREVIEW_NEIGHBOUR, neighbour,
+                                 i + HB_PREVIEW_NEIGHBOUR, partner,
                                  HB_PREVIEW_FORMAT_JPG );
             }
         }
         hb_buffer_close( &neighbour );
+        hb_buffer_close( &before );
 
         /* Detect black borders */
 
@@ -1091,6 +1168,7 @@ skip_preview:
             hb_buffer_close( &vid_buf );
             hb_buffer_close( &neighbour );
         }
+        hb_buffer_close( &before );
         if (abort)
         {
             break;
