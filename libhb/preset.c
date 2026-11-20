@@ -764,8 +764,12 @@ void hb_sanitize_audio_settings(const hb_title_t * title,
     }
     hb_dict_set(audio_settings, "Quality", hb_value_double(quality));
     hb_dict_set(audio_settings, "Bitrate", hb_value_int(bitrate));
+    // An encoder this build lacks keeps its own name (the job refuses it).
+    const hb_encoder_t *absent = hb_audio_encoder_get_absent(codec_name);
     hb_dict_set(audio_settings, "Encoder",
-                hb_value_string(hb_audio_encoder_get_short_name(codec)));
+                hb_value_string(absent != NULL && !(codec & HB_ACODEC_PASS_FLAG) ?
+                                absent->short_name :
+                                hb_audio_encoder_get_short_name(codec)));
 }
 
 static void add_audio_for_lang(hb_value_array_t *list, const hb_dict_t *preset,
@@ -2765,6 +2769,13 @@ static void preset_clean(hb_value_t *preset, hb_value_t *template)
                          preset_name, s);
             }
             enc = hb_audio_encoder_get_short_name(acodec);
+            // An encoder this build lacks keeps its own name: the job made
+            // from the preset says so and does not run with another one.
+            const hb_encoder_t *absent = hb_audio_encoder_get_absent(s);
+            if (absent != NULL)
+            {
+                enc = absent->short_name;
+            }
             val = hb_value_string(enc);
             hb_dict_set(adict, "AudioEncoder", val);
         }
