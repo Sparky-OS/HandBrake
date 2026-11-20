@@ -126,6 +126,7 @@ struct hb_work_private_s
     AVFrame              * mv_first;   // the first view of the access unit being paired
     int                    mv_width, mv_height;
     int                    mv_unpaired;
+    int                    mv_view_count; // the VPS's views, read in get_format()
     AVPacket             * pkt;
     hb_buffer_t          * palette;
     int                    threads;
@@ -1158,6 +1159,20 @@ static hb_buffer_t * cc_fill_buffer(hb_work_private_t *pv, uint8_t *cc, int size
 // copy one video frame into an HB buf. If the frame isn't in our color space
 // or at least one of its dimensions is odd, use sws_scale to convert/rescale it.
 // Otherwise just copy the bits.
+/*
+ * The size of the pictures the decoder hands on: the coded size, or for an
+ * MV-HEVC source decoded as two views, the two views side by side.
+ */
+static int decoded_width(hb_work_private_t *pv)
+{
+    return pv->mv_views == 2 && pv->mv_width > 0 ? pv->mv_width : pv->context->width;
+}
+
+static int decoded_height(hb_work_private_t *pv)
+{
+    return pv->mv_views == 2 && pv->mv_height > 0 ? pv->mv_height : pv->context->height;
+}
+
 static hb_buffer_t *copy_frame( hb_work_private_t *pv )
 {
     reordered_data_t * reordered = NULL;
@@ -1386,8 +1401,8 @@ int reinit_video_filters(hb_work_private_t * pv)
         // HandBrake's preview pipeline uses yuv420 color.  This means all
         // dimensions must be even.  So we must adjust the dimensions
         // of incoming video if not even.
-        orig_width = pv->context->width & ~1;
-        orig_height = pv->context->height & ~1;
+        orig_width = decoded_width(pv) & ~1;
+        orig_height = decoded_height(pv) & ~1;
         pix_fmt = AV_PIX_FMT_YUV420P;
         color_range = AVCOL_RANGE_MPEG;
     }
@@ -1715,11 +1730,38 @@ static void filter_video(hb_work_private_t *pv)
  * resampled, so the encode, its stereo marks and the preview follow the
  * side-by-side path. A stream with one view is passed on as it is.
  */
-static void mv_hevc_options(const AVCodec *codec, AVDictionary **av_opts)
+static int mv_hevc_view_count(AVCodecContext *context);
+
+/*
+ * FFmpeg documents view_ids_available as accurate only when read from the
+ * get_format() callback; with frame threading the caller's context never sees
+ * it, so it is read there, in the decoding thread's context.
+ */
+static enum AVPixelFormat mv_hevc_get_format(AVCodecContext *context,
+                                             const enum AVPixelFormat *pix_fmts)
 {
-    if (codec != NULL && codec->id == AV_CODEC_ID_HEVC)
+    hb_work_private_t *pv = context->opaque;
+    int count = mv_hevc_view_count(context);
+    if (count > 0)
+    {
+        pv->mv_view_count = count;
+    }
+    return avcodec_default_get_format(context, pix_fmts);
+}
+
+static void mv_hevc_options(hb_work_private_t *pv, AVDictionary **av_opts)
+{
+    if (pv->codec != NULL && pv->codec->id == AV_CODEC_ID_HEVC)
     {
         av_dict_set(av_opts, "view_ids", "-1", 0);
+        if (pv->context->get_format == avcodec_default_get_format ||
+            pv->context->get_format == mv_hevc_get_format)
+        {
+            // A hardware decoder keeps its own callback; its view count is
+            // then read from the context at the first frame.
+            pv->context->get_format = mv_hevc_get_format;
+            pv->context->opaque = pv;
+        }
     }
 }
 
@@ -1804,6 +1846,9 @@ static AVFrame *mv_hevc_compose(const AVFrame *left, const AVFrame *right)
     return sbs;
 }
 
+static int mv_hevc_one_view(hb_work_private_t *pv, AVFrame *first);
+static int mv_hevc_output(hb_work_private_t *pv, AVFrame *first, AVFrame *second);
+
 // 1 when pv->frame holds a frame to pass on, 0 when it waits for its other view.
 static int mv_hevc_pair(hb_work_private_t *pv)
 {
@@ -1811,7 +1856,9 @@ static int mv_hevc_pair(hb_work_private_t *pv)
     {
         if (av_frame_get_side_data(pv->frame, AV_FRAME_DATA_VIEW_ID) == NULL)
             return 1;
-        pv->mv_views = mv_hevc_view_count(pv->context) == 2 ? 2 : -1;
+        int count = pv->mv_view_count > 0 ? pv->mv_view_count
+                                          : mv_hevc_view_count(pv->context);
+        pv->mv_views = count == 2 ? 2 : -1;
         if (pv->mv_views == 2)
         {
             hb_log("decavcodec: MV-HEVC with two views: each access unit becomes "
@@ -1839,19 +1886,39 @@ static int mv_hevc_pair(hb_work_private_t *pv)
     if (first->pts != second->pts)
     {
         // The held view's access unit had no second view: both eyes show it.
-        if (!pv->mv_unpaired++)
-        {
-            hb_log("decavcodec: MV-HEVC: an access unit has one view; "
-                   "both eyes show that view for it");
-        }
         pv->mv_first = second;
-        second = av_frame_clone(first);
-        if (second == NULL)
-        {
-            av_frame_free(&first);
-            return 0;
-        }
+        return mv_hevc_one_view(pv, first);
     }
+    return mv_hevc_output(pv, first, second);
+}
+
+// At the end of the stream: the held view's access unit had no second view.
+static int mv_hevc_flush(hb_work_private_t *pv)
+{
+    AVFrame *first = pv->mv_first;
+    pv->mv_first = NULL;
+    return first != NULL && mv_hevc_one_view(pv, first);
+}
+
+static int mv_hevc_one_view(hb_work_private_t *pv, AVFrame *first)
+{
+    if (!pv->mv_unpaired++)
+    {
+        hb_log("decavcodec: MV-HEVC: an access unit has one view; "
+               "both eyes show that view for it");
+    }
+    AVFrame *second = av_frame_clone(first);
+    if (second == NULL)
+    {
+        av_frame_free(&first);
+        return 0;
+    }
+    return mv_hevc_output(pv, first, second);
+}
+
+// Puts the two views side by side in pv->frame; takes both frames.
+static int mv_hevc_output(hb_work_private_t *pv, AVFrame *first, AVFrame *second)
+{
     int swap = mv_hevc_view_side(first) == 1 || mv_hevc_view_side(second) == 0;
     AVFrame *sbs = mv_hevc_compose(swap ? second : first, swap ? first : second);
     av_frame_free(&first);
@@ -1990,6 +2057,13 @@ static int decodeFrame( hb_work_private_t * pv, packet_info_t * packet_info )
         filter_video(pv);
     } while (ret >= 0);
 
+    if (packet_info == NULL && mv_hevc_flush(pv))
+    {
+        compute_frame_duration( pv );
+        filter_video(pv);
+        got_picture = 1;
+    }
+
     if ( global_verbosity_level <= 1 )
     {
         av_log_set_level( oldlevel );
@@ -2090,7 +2164,7 @@ static int decavcodecvInit( hb_work_object_t * w, hb_job_t * job )
         }
 #endif
 
-        mv_hevc_options(pv->codec, &av_opts);
+        mv_hevc_options(pv, &av_opts);
         if ( hb_avcodec_open( pv->context, pv->codec, &av_opts, pv->threads ) )
         {
             av_dict_free( &av_opts );
@@ -2284,7 +2358,7 @@ static int decodePacket( hb_work_object_t * w )
         }
 
         // disable threaded decoding for scan, can cause crashes
-        mv_hevc_options(pv->codec, &av_opts);
+        mv_hevc_options(pv, &av_opts);
         if ( hb_avcodec_open( pv->context, pv->codec, &av_opts, pv->threads ) )
         {
             av_dict_free( &av_opts );
@@ -2588,8 +2662,8 @@ static int decavcodecvInfo( hb_work_object_t *w, hb_work_info_t *info )
         // HandBrake's video pipeline uses yuv420 color.  This means all
         // dimensions must be even.  So we must adjust the dimensions
         // of incoming video if not even.
-        info->geometry.width = pv->context->height & ~1;
-        info->geometry.height = pv->context->width & ~1;
+        info->geometry.width = decoded_height(pv) & ~1;
+        info->geometry.height = decoded_width(pv) & ~1;
 
         info->geometry.par.num = pv->context->sample_aspect_ratio.den;
         info->geometry.par.den = pv->context->sample_aspect_ratio.num;
@@ -2599,14 +2673,8 @@ static int decavcodecvInfo( hb_work_object_t *w, hb_work_info_t *info )
         // HandBrake's video pipeline uses yuv420 color.  This means all
         // dimensions must be even.  So we must adjust the dimensions
         // of incoming video if not even.
-        info->geometry.width = pv->context->width & ~1;
-        info->geometry.height = pv->context->height & ~1;
-        if (pv->mv_views == 2 && pv->mv_width > 0)
-        {
-            // MV-HEVC: the two views side by side
-            info->geometry.width = pv->mv_width & ~1;
-            info->geometry.height = pv->mv_height & ~1;
-        }
+        info->geometry.width = decoded_width(pv) & ~1;
+        info->geometry.height = decoded_height(pv) & ~1;
 
         info->geometry.par.num = pv->context->sample_aspect_ratio.num;
         info->geometry.par.den = pv->context->sample_aspect_ratio.den;
@@ -2662,6 +2730,8 @@ static void decavcodecvFlush( hb_work_object_t *w )
     if (pv->context != NULL && pv->context->codec != NULL)
     {
         hb_buffer_list_close(&pv->list);
+        // A view held for its pair belongs to the stream before the flush.
+        av_frame_free(&pv->mv_first);
         if ( pv->title->opaque_priv == NULL )
         {
             pv->video_codec_opened = 0;
