@@ -240,6 +240,7 @@ static void ShowCommands(void)
 
 static int         ParseOptions( int argc, char ** argv );
 static int         CheckOptions( int argc, char ** argv );
+static int         CheckAudioEncoders( void );
 static int         HandleEvents( hb_handle_t * h, hb_dict_t *preset_dict );
 static hb_dict_t * PreparePreset( const char *preset_name );
 static hb_dict_t * PrepareJob( hb_handle_t *h, hb_title_t *title,
@@ -520,7 +521,8 @@ int main( int argc, char ** argv )
 
     /* Parse command line */
     if( ParseOptions( argc, argv ) ||
-        CheckOptions( argc, argv ) )
+        CheckOptions( argc, argv ) ||
+        CheckAudioEncoders() )
     {
         hb_log_level_set(h, debug);
         goto cleanup;
@@ -3714,6 +3716,52 @@ static int count_subtitles(char **subtracks)
         }
     }
     return subtitle_track_count;
+}
+
+/*
+ * An audio encoder this build lacks is never replaced in silence: without
+ * --audio-fallback nothing is encoded; with it, the track uses that fallback
+ * and the log says which encoder and why.
+ */
+static int CheckAudioEncoders( void )
+{
+    int ii;
+    for (ii = 0; acodecs != NULL && acodecs[ii] != NULL; ii++)
+    {
+        const hb_encoder_t *absent = hb_audio_encoder_get_absent(acodecs[ii]);
+        if (absent == NULL)
+        {
+            continue;
+        }
+        if (acodec_fallback == NULL)
+        {
+            fprintf(stderr, "Audio encoder %s is not available: %s\n"
+                    "Nothing was encoded. Name another encoder with -E, or "
+                    "give one with --audio-fallback to use it for this "
+                    "track.\n", absent->short_name,
+                    hb_audio_encoder_absent_reason(absent));
+            done_error = HB_ERROR_INIT;
+            return 1;
+        }
+        if (hb_audio_encoder_get_absent(acodec_fallback) != NULL ||
+            hb_audio_encoder_get_from_name(acodec_fallback) <= 0)
+        {
+            fprintf(stderr, "Audio encoder %s is not available: %s\n"
+                    "The fallback %s given with --audio-fallback cannot be "
+                    "used either. Nothing was encoded.\n", absent->short_name,
+                    hb_audio_encoder_absent_reason(absent), acodec_fallback);
+            done_error = HB_ERROR_INIT;
+            return 1;
+        }
+        fprintf(stderr, "Audio encoder %s is not available: %s\n"
+                "Using %s for audio encoder %d, the fallback given with "
+                "--audio-fallback.\n", absent->short_name,
+                hb_audio_encoder_absent_reason(absent), acodec_fallback,
+                ii + 1);
+        free(acodecs[ii]);
+        acodecs[ii] = strdup(acodec_fallback);
+    }
+    return 0;
 }
 
 static int CheckOptions( int argc, char ** argv )

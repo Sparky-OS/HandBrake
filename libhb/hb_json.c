@@ -1749,6 +1749,29 @@ hb_job_t* hb_dict_to_job( hb_handle_t * h, hb_dict_t *dict )
                          error.text);
                 goto fail;
             }
+            // An encoder this build lacks is never replaced behind the
+            // person's back: the job stops and says why. A front end that
+            // was given a fallback replaces the name before the job is made.
+            const hb_encoder_t *absent = NULL;
+            hb_value_t *absent_value = hb_dict_get(audio_dict, "AbsentEncoder");
+            if (absent_value != NULL &&
+                hb_value_type(absent_value) == HB_VALUE_TYPE_STRING)
+            {
+                absent = hb_audio_encoder_get_absent(
+                                        hb_value_get_string(absent_value));
+            }
+            if (absent == NULL && acodec != NULL &&
+                hb_value_type(acodec) == HB_VALUE_TYPE_STRING)
+            {
+                absent = hb_audio_encoder_get_absent(hb_value_get_string(acodec));
+            }
+            if (absent != NULL)
+            {
+                hb_error("hb_dict_to_job: audio track %d: the encoder %s is "
+                         "not available: %s", ii + 1, absent->short_name,
+                         hb_audio_encoder_absent_reason(absent));
+                goto fail;
+            }
             if (acodec != NULL)
             {
                 if (hb_value_type(acodec) == HB_VALUE_TYPE_STRING)

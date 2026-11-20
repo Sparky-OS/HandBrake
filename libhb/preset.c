@@ -789,11 +789,14 @@ static void add_audio_for_lang(hb_value_array_t *list, const hb_dict_t *preset,
             hb_value_t *acodec_value;
             hb_dict_t *encoder_dict = hb_value_array_get(encoder_list, ii);
             int out_codec;
+            const hb_encoder_t *absent = NULL;
 
             acodec_value = hb_dict_get(encoder_dict, "AudioEncoder");
             if (hb_value_type(acodec_value) == HB_VALUE_TYPE_STRING)
             {
                 out_codec = hb_audio_encoder_get_from_name(
+                                hb_value_get_string(acodec_value));
+                absent = hb_audio_encoder_get_absent(
                                 hb_value_get_string(acodec_value));
             }
             else
@@ -839,6 +842,15 @@ static void add_audio_for_lang(hb_value_array_t *list, const hb_dict_t *preset,
             hb_dict_t *audio_dict = hb_dict_init();
             hb_dict_set(audio_dict, "PresetEncoder",
                 hb_value_string(hb_audio_encoder_get_short_name(out_codec)));
+            if (absent != NULL)
+            {
+                // The name stands for another encoder of its group; the job
+                // refuses to run with it unless the front end replaced it.
+                hb_log("audio: %s: %s", absent->short_name,
+                       hb_audio_encoder_absent_reason(absent));
+                hb_dict_set(audio_dict, "AbsentEncoder",
+                            hb_value_string(absent->short_name));
+            }
 
             out_codec = sanitize_audio_codec(aconfig->in.codec, out_codec,
                                              copy_mask, fallback, mux);
@@ -849,6 +861,8 @@ static void add_audio_for_lang(hb_value_array_t *list, const hb_dict_t *preset,
             }
             hb_dict_set(audio_dict, "Track", hb_value_int(aconfig->index));
             hb_dict_set(audio_dict, "Encoder", hb_value_string(
+                        absent != NULL && !(out_codec & HB_ACODEC_PASS_FLAG) ?
+                        absent->short_name :
                         hb_audio_encoder_get_short_name(out_codec)));
             if (!(out_codec & HB_ACODEC_PASS_FLAG))
             {

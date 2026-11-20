@@ -620,6 +620,18 @@ const char*         hb_audio_encoder_get_long_name(int encoder);
 const char*         hb_audio_encoder_sanitize_name(const char *name);
 const hb_encoder_t* hb_audio_encoder_get_next(const hb_encoder_t *last);
 
+/*
+ * An audio encoder HandBrake knows but this build lacks (its library, or the
+ * FFmpeg encoder it uses, is not there), or NULL. Its name still resolves to
+ * another encoder of its group, so a front end that takes a name from the
+ * person asks here first and substitutes only a fallback the person gave.
+ * hb_audio_encoder_get_next_absent() walks every such encoder.
+ * hb_audio_encoder_absent_reason() says why and what to do, in English.
+ */
+const hb_encoder_t* hb_audio_encoder_get_absent(const char *name);
+const hb_encoder_t* hb_audio_encoder_get_next_absent(const hb_encoder_t *last);
+const char*         hb_audio_encoder_absent_reason(const hb_encoder_t *encoder);
+
 const char*         hb_audio_decoder_get_name(int codec, int codec_param);
 
 /*

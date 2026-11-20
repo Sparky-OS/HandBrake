@@ -3297,6 +3297,60 @@ fail:
     return HB_ACODEC_INVALID;
 }
 
+static int audio_encoder_is_absent(const hb_encoder_internal_t *entry)
+{
+    // Legacy and generic names have no long name; they are aliases, not encoders.
+    return !entry->enabled && !entry->deprecated && entry->item.long_name != NULL;
+}
+
+const hb_encoder_t* hb_audio_encoder_get_absent(const char *name)
+{
+    if (name == NULL || *name == '\0')
+        return NULL;
+
+    int i;
+    for (i = 0; i < hb_audio_encoders_count; i++)
+    {
+        if (!strcasecmp(hb_audio_encoders[i].item.name,       name) ||
+            !strcasecmp(hb_audio_encoders[i].item.short_name, name))
+        {
+            return audio_encoder_is_absent(&hb_audio_encoders[i]) ?
+                   &hb_audio_encoders[i].item : NULL;
+        }
+    }
+    return NULL;
+}
+
+const hb_encoder_t* hb_audio_encoder_get_next_absent(const hb_encoder_t *last)
+{
+    int i = 0;
+    if (last != NULL)
+    {
+        while (i < hb_audio_encoders_count && &hb_audio_encoders[i].item != last)
+            i++;
+        i++;
+    }
+    for (; i < hb_audio_encoders_count; i++)
+    {
+        if (audio_encoder_is_absent(&hb_audio_encoders[i]))
+            return &hb_audio_encoders[i].item;
+    }
+    return NULL;
+}
+
+const char* hb_audio_encoder_absent_reason(const hb_encoder_t *encoder)
+{
+    if (encoder != NULL && (!strcmp(encoder->short_name, "fdk_aac") ||
+                            !strcmp(encoder->short_name, "fdk_haac")))
+    {
+        return "Fraunhofer's AAC encoder (libfdk_aac) is not in this computer's FFmpeg: "
+               "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer. "
+               "Install sparky-stereo-ffmpeg-fdk and run sparky-stereo-ffmpeg-fdk in a terminal; "
+               "it explains and asks first.";
+    }
+    return "this encoder is not in this build of HandBrake or in this computer's FFmpeg.";
+}
+
 const char* hb_audio_encoder_get_name(int encoder)
 {
     if (!(encoder & HB_ACODEC_ANY))
