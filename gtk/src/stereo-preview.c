@@ -142,6 +142,9 @@ static void present (GdkTexture *frame, GdkTexture *second, double aspect)
         {
             sp->still_next = second = gdk_texture_new_for_pixbuf(next);
             g_object_unref(next);
+            ghb_log("Preview: preview %d is the %s picture of its pair of views in turn (an %s frame of the source)",
+                    sp->still_index + 1, sp->still_next_before ? "second" : "first",
+                    sp->still_next_before ? "odd" : "even");
         }
     }
     /* pairs are counted from the source's first frame: the still is the second picture of its pair when the
