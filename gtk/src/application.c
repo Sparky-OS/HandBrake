@@ -19,6 +19,8 @@
 
 #include "application.h"
 
+#include <stereo-gtk.h>
+
 #include "audiohandler.h"
 #include "callbacks.h"
 #include "color-scheme.h"
@@ -82,6 +84,7 @@ create_builder_or_die (const gchar *name)
 
     ghb_log_func();
     xml = gtk_builder_new();
+    g_type_ensure(stereo_gtk_window_get_type());
     gtk_builder_add_from_resource(xml, "/fr/handbrake/ghb/ui/menu.ui", &error);
     if (!error)
         gtk_builder_add_from_resource(xml, "/fr/handbrake/ghb/ui/ghb.ui", &error);

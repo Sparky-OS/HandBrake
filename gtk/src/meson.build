@@ -21,6 +21,7 @@ ghb_src = files(
   'power-manager.c',
   'presets.c',
   'preview.c',
+  'stereo-preview.c',
   'queuehandler.c',
   'resources.c',
   'settings.c',

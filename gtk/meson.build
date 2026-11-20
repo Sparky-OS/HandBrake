@@ -52,6 +52,7 @@ ghb_deps = [
   dependency('vorbisenc'),
   dependency('x264'),
   dependency('zlib'),
+  dependency('stereo-gtk'),
 ]
 
 if get_option('libdovi').enabled()

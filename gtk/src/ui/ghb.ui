@@ -6440,7 +6440,7 @@ battery is charged.</property>
     <property name="step-increment">1</property>
     <property name="page-increment">10</property>
   </object>
-  <object class="GtkWindow" id="preview_window">
+  <object class="StereoGtkWindow" id="preview_window">
     <property name="title" translatable="yes">HandBrake Preview</property>
     <property name="icon-name">fr.handbrake.ghb</property>
     <property name="default-width">854</property>
