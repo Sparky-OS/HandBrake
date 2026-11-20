@@ -53,6 +53,7 @@ ghb_deps = [
   dependency('x264'),
   dependency('zlib'),
   dependency('stereo-gtk'),
+  dependency('gstreamer-1.0'),
 ]
 
 if get_option('libdovi').enabled()

@@ -3794,3 +3794,10 @@ msgstr ""
 msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
 msgstr ""
 
+#: gtk/src/preview.c
+msgid "The preview cannot be played"
+msgstr ""
+
+#: gtk/src/preview.c
+msgid "Playing the preview needs GStreamer's playback element (playbin), which is not installed. Install the package gstreamer1.0-plugins-base, then press play again."
+msgstr ""

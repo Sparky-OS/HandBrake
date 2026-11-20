@@ -4025,3 +4025,10 @@ msgstr "Sparky Stereo OS はこれを含めてビルドした FFmpeg を配布�
 msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
 msgstr "このクリップのソース内での開始位置が不明なため、交互に並ぶビューを対にできません。再生を押してもう一度エンコードしてください。"
 
+#: gtk/src/preview.c
+msgid "The preview cannot be played"
+msgstr "プレビューを再生できません"
+
+#: gtk/src/preview.c
+msgid "Playing the preview needs GStreamer's playback element (playbin), which is not installed. Install the package gstreamer1.0-plugins-base, then press play again."
+msgstr "プレビューの再生には GStreamer の再生エレメント (playbin) が必要ですが、インストールされていません。gstreamer1.0-plugins-base パッケージをインストールしてから、もう一度再生を押してください。"

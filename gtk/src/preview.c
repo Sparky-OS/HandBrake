@@ -29,6 +29,7 @@
 #include "title-add.h"
 #include "values.h"
 
+#include <gst/gst.h>
 #include <unistd.h>
 
 enum {
@@ -403,10 +404,56 @@ ghb_live_reset(signal_user_data_t *ud)
         ghb_set_preview_image(ud);
 }
 
+// GTK plays the preview through GStreamer's GstPlay, which ends the program
+// (g_error) when the "playbin" element is missing. Say so instead.
+static gboolean
+live_preview_can_play (void)
+{
+    static int found = -1;
+
+    if (found < 0)
+    {
+        GstElementFactory *factory = NULL;
+        GError *error = NULL;
+
+        if (gst_init_check(NULL, NULL, &error))
+            factory = gst_element_factory_find("playbin");
+        else
+            g_warning("GStreamer: %s", error ? error->message : "not initialised");
+        g_clear_error(&error);
+        found = factory != NULL;
+        g_clear_object(&factory);
+    }
+    return found;
+}
+
+static void
+live_preview_cannot_play (void)
+{
+    GtkWindow *window = GTK_WINDOW(ghb_builder_widget("preview_window"));
+    GtkWidget *dialog = gtk_message_dialog_new(window, GTK_DIALOG_MODAL,
+        GTK_MESSAGE_WARNING, GTK_BUTTONS_CLOSE, _("The preview cannot be played"));
+
+    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog), "%s",
+        _("Playing the preview needs GStreamer's playback element (playbin), "
+          "which is not installed. Install the package "
+          "gstreamer1.0-plugins-base, then press play again."));
+    g_signal_connect(dialog, "response", G_CALLBACK(gtk_window_destroy), NULL);
+    gtk_widget_set_visible(dialog, TRUE);
+    ghb_log("Preview: cannot play the preview: GStreamer's playbin element is "
+            "missing (package gstreamer1.0-plugins-base)");
+}
+
 G_MODULE_EXPORT void
 live_preview_play_clicked_cb (GtkWidget *widget, gpointer data)
 {
     signal_user_data_t *ud = ghb_ud();
+
+    if (!live_preview_can_play())
+    {
+        live_preview_cannot_play();
+        return;
+    }
     gint frame = ud->preview->frame;
     const char *tmp_dir = ghb_get_tmp_dir();
     char *name = g_strdup_printf("%s/live%02d", tmp_dir, ud->preview->frame);

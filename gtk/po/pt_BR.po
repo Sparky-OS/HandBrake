@@ -4109,3 +4109,10 @@ msgstr "O Sparky Stereo OS não pode distribuir um FFmpeg compilado com ele, ent
 msgid "The start of this clip in the source is not known, so its views in turn cannot be paired: press play to encode it again."
 msgstr "O início deste trecho na origem não é conhecido, então suas vistas alternadas não podem ser pareadas: pressione reproduzir para codificá-lo novamente."
 
+#: gtk/src/preview.c
+msgid "The preview cannot be played"
+msgstr "A prévia não pode ser reproduzida"
+
+#: gtk/src/preview.c
+msgid "Playing the preview needs GStreamer's playback element (playbin), which is not installed. Install the package gstreamer1.0-plugins-base, then press play again."
+msgstr "Reproduzir a prévia requer o elemento de reprodução do GStreamer (playbin), que não está instalado. Instale o pacote gstreamer1.0-plugins-base e pressione reproduzir novamente."
