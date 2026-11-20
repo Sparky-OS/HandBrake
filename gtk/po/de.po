@@ -4125,3 +4125,12 @@ msgstr "Transcodiert DVD, Blu-ray und andere Medien"
 #: data/fr.handbrake.ghb.desktop.in:10
 msgid "Format Converter;Video Encoder;"
 msgstr "Formatconverter;Videoencoder;"
+
+#: gtk/src/audiohandler.c
+msgid "Fraunhofer's AAC encoder is not in this computer's FFmpeg"
+msgstr "Der AAC-Encoder von Fraunhofer ist nicht im FFmpeg dieses Computers"
+
+#: gtk/src/audiohandler.c
+#, c-format
+msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
+msgstr "Sparky Stereo OS darf kein damit gebautes FFmpeg weitergeben, deshalb wird es auf Ihrem eigenen Computer gebaut: Installieren Sie sparky-stereo-ffmpeg-fdk und starten Sie dann sparky-stereo-ffmpeg-fdk in einem Terminal; es erklärt alles und fragt vorher. Bis dahin startet ein Auftrag mit %s nicht."

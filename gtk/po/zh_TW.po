@@ -1,0 +1,20 @@
+# Sparky Stereo OS: the edition's own sentences of Stereo HandBrake (zh_TW).
+# This file is distributed under the same license as the ghb package.
+msgid ""
+msgstr ""
+"Project-Id-Version: ghb 0.1\n"
+"Report-Msgid-Bugs-To: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: zh_TW\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: gtk/src/audiohandler.c
+msgid "Fraunhofer's AAC encoder is not in this computer's FFmpeg"
+msgstr "這台電腦的 FFmpeg 中沒有 Fraunhofer 的 AAC 編碼器"
+
+#: gtk/src/audiohandler.c
+#, c-format
+msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
+msgstr "Sparky Stereo OS 不得散布含有該編碼器建置的 FFmpeg，因此需要在您自己的電腦上建置：請安裝 sparky-stereo-ffmpeg-fdk，然後在終端機中執行 sparky-stereo-ffmpeg-fdk；它會先說明並徵求同意。在此之前，使用 %s 的工作不會開始。"

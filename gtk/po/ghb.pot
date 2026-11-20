@@ -3780,3 +3780,12 @@ msgstr ""
 #: data/fr.handbrake.ghb.desktop.in:10
 msgid "Format Converter;Video Encoder;"
 msgstr ""
+
+#: gtk/src/audiohandler.c
+msgid "Fraunhofer's AAC encoder is not in this computer's FFmpeg"
+msgstr ""
+
+#: gtk/src/audiohandler.c
+#, c-format
+msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
+msgstr ""

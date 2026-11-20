@@ -4011,3 +4011,12 @@ msgstr "DVD、ブルーレイや他メディアのトランスコード"
 #: data/fr.handbrake.ghb.desktop.in:10
 msgid "Format Converter;Video Encoder;"
 msgstr "形式変換;ビデオエンコーダー;"
+
+#: gtk/src/audiohandler.c
+msgid "Fraunhofer's AAC encoder is not in this computer's FFmpeg"
+msgstr "このコンピューターの FFmpeg には Fraunhofer の AAC エンコーダーが入っていません"
+
+#: gtk/src/audiohandler.c
+#, c-format
+msgid "Sparky Stereo OS may not pass on an FFmpeg built with it, so it is built on your own computer: install sparky-stereo-ffmpeg-fdk, then run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks first. Until then, a job with %s does not start."
+msgstr "Sparky Stereo OS はこれを含めてビルドした FFmpeg を配布できないため、お使いのコンピューターでビルドします。sparky-stereo-ffmpeg-fdk をインストールし、端末で sparky-stereo-ffmpeg-fdk を実行してください。最初に説明と確認があります。それまでは、%s を使うジョブは開始されません。"
