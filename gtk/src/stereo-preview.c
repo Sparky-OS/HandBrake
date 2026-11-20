@@ -242,6 +242,13 @@ static void enable_changed (GtkWidget *button, gboolean enabled, gpointer data)
     stereo_gtk_area_set_enabled(sp->area, enabled);
 }
 
+/* The menu's button sits in the preview's HUD, which hides itself: the HUD stays while the menu is open. */
+static void menu_shown (GObject *popover, GParamSpec *pspec, gpointer data)
+{
+    (void)pspec; (void)data;
+    ghb_preview_hud_hold(gtk_widget_get_visible(GTK_WIDGET(popover)));
+}
+
 static void area_error (GtkWidget *area, const char *text, gpointer data)
 {
     (void)area; (void)data;
@@ -284,6 +291,8 @@ static void init (void)
     stereo_gtk_area_keep_above(sp->area, sp->message);
 
     sp->menu = stereo_gtk_file_menu_new(file_changed, enable_changed, NULL);
+    g_signal_connect(gtk_menu_button_get_popover(GTK_MENU_BUTTON(sp->menu)), "notify::visible",
+                     G_CALLBACK(menu_shown), NULL);
     GtkWidget *play = ghb_builder_widget("live_preview_play");
     gtk_box_append(GTK_BOX(gtk_widget_get_parent(play)), sp->menu);
 }

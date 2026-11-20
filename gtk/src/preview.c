@@ -736,6 +736,8 @@ static guint hud_timeout_id = 0;
 static guint hud_fade_id = 0;
 
 static gboolean in_hud = FALSE;
+// The 3D menu's popover is open: the HUD that holds its button stays.
+static gboolean hud_held = FALSE;
 
 static void
 cancel_source_function (guint id)
@@ -815,7 +817,7 @@ static gboolean
 hud_timeout (GtkWidget *widget)
 {
     ghb_log_func();
-    if (live_preview_get_state() != PREVIEW_STATE_ENCODING)
+    if (live_preview_get_state() != PREVIEW_STATE_ENCODING && !hud_held)
     {
         cancel_source_function(hud_fade_id);
         hud_fade_id = g_timeout_add(16, (GSourceFunc)hud_fade_out, widget);
@@ -874,6 +876,31 @@ preview_motion_cb (GtkEventControllerMotion *econ, double x, double y,
     }
 
     if (!in_hud)
+    {
+        hud_timeout_id = g_timeout_add_seconds(4, (GSourceFunc)hud_timeout, hud);
+    }
+}
+
+// While the 3D menu's popover is open the HUD that holds its button is kept
+// shown: hiding the HUD unmaps the button, and GTK then closes the popover.
+// After a popover was used, the HUD's enter and leave can be out of step with
+// the pointer, so a pending hide could land while the menu opens.
+void
+ghb_preview_hud_hold (gboolean hold)
+{
+    GtkWidget *hud = ghb_builder_widget("preview_hud");
+
+    hud_held = hold;
+    cancel_source_function(hud_fade_id);
+    hud_fade_id = 0;
+    cancel_source_function(hud_timeout_id);
+    hud_timeout_id = 0;
+    if (hold)
+    {
+        gtk_widget_set_visible(hud, TRUE);
+        gtk_widget_set_opacity(hud, 1.0);
+    }
+    else
     {
         hud_timeout_id = g_timeout_add_seconds(4, (GSourceFunc)hud_timeout, hud);
     }
