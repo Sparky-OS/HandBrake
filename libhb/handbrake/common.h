@@ -914,6 +914,7 @@ struct hb_job_s
     hb_list_t     * list_audio;
     int             acodec_copy_mask; // Auto Passthru allowed codecs
     int             acodec_fallback;  // Auto Passthru fallback encoder
+    const char    * absent_audio_encoder; // named by an audio track, not in this build
 
     /* Subtitles */
     hb_list_t     * list_subtitle;

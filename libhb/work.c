@@ -2077,6 +2077,20 @@ static void do_job(hb_job_t *job)
             job->fifo_render = NULL;
         }
 
+        // An audio track names an encoder this build lacks: nothing is
+        // encoded with another one unless the person chose that.
+        if (job->absent_audio_encoder != NULL)
+        {
+            const hb_encoder_t *absent =
+                hb_audio_encoder_get_absent(job->absent_audio_encoder);
+            hb_error("Audio encoder %s is not available: %s Nothing was "
+                     "encoded.", job->absent_audio_encoder,
+                     hb_audio_encoder_absent_reason(absent));
+            *job->done_error = HB_ERROR_INIT;
+            *job->die = 1;
+            goto cleanup;
+        }
+
         // Video encoder
         w = hb_video_encoder(job->h, job->vcodec);
         if (w == NULL)

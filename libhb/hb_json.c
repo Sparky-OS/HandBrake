@@ -1750,8 +1750,9 @@ hb_job_t* hb_dict_to_job( hb_handle_t * h, hb_dict_t *dict )
                 goto fail;
             }
             // An encoder this build lacks is never replaced behind the
-            // person's back: the job stops and says why. A front end that
-            // was given a fallback replaces the name before the job is made.
+            // person's back: the encode does not start and says why (work.c);
+            // a preview of the job is still made. A front end that was given
+            // a fallback replaces the name before the job is made.
             const hb_encoder_t *absent = NULL;
             hb_value_t *absent_value = hb_dict_get(audio_dict, "AbsentEncoder");
             if (absent_value != NULL &&
@@ -1765,12 +1766,9 @@ hb_job_t* hb_dict_to_job( hb_handle_t * h, hb_dict_t *dict )
             {
                 absent = hb_audio_encoder_get_absent(hb_value_get_string(acodec));
             }
-            if (absent != NULL)
+            if (absent != NULL && job->absent_audio_encoder == NULL)
             {
-                hb_error("hb_dict_to_job: audio track %d: the encoder %s is "
-                         "not available: %s", ii + 1, absent->short_name,
-                         hb_audio_encoder_absent_reason(absent));
-                goto fail;
+                job->absent_audio_encoder = absent->short_name;
             }
             if (acodec != NULL)
             {
