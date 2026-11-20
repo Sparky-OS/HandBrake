@@ -2825,7 +2825,7 @@ msgstr "您必须立即重启 HandBrake。"
 #: src/callbacks.c:3908
 #, c-format
 msgid "%s in %d seconds…"
-msgstr " 在 %d 秒内 %s…"
+msgstr " 在 %2$d 秒内 %1$s…"
 
 #: src/callbacks.c:4114
 msgid "Stop Encoding?"
