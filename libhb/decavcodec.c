@@ -47,6 +47,10 @@
 #include "libavfilter/buffersrc.h"
 #include "libavfilter/buffersink.h"
 #include "libavutil/hwcontext.h"
+#include "libavutil/imgutils.h"
+#include "libavutil/opt.h"
+#include "libavutil/pixdesc.h"
+#include "libavutil/stereo3d.h"
 #include "handbrake/hwaccel.h"
 #include "handbrake/lang.h"
 #include "handbrake/audio_resample.h"
@@ -117,6 +121,11 @@ struct hb_work_private_s
     AVCodecContext       * context;
     AVCodecParserContext * parser;
     AVFrame              * frame;
+    // MV-HEVC: 2 when both views are decoded and paired, -1 when not, 0 unknown
+    int                    mv_views;
+    AVFrame              * mv_first;   // the first view of the access unit being paired
+    int                    mv_width, mv_height;
+    int                    mv_unpaired;
     AVPacket             * pkt;
     hb_buffer_t          * palette;
     int                    threads;
@@ -572,6 +581,7 @@ static void closePrivData( hb_work_private_t ** ppv )
         }
         av_frame_free(&pv->frame);
         av_frame_free(&pv->hw_frame);
+        av_frame_free(&pv->mv_first);
         close_video_filters(pv);
         if ( pv->parser )
         {
@@ -1287,7 +1297,13 @@ static hb_buffer_t *copy_frame( hb_work_private_t *pv )
     {
         // Use decoded frame packing when the container has no stereo metadata.
         sd = av_frame_get_side_data(pv->frame, AV_FRAME_DATA_STEREO3D);
-        if (pv->title->stereo_3d.type == HB_STEREO3D_UNSET &&
+        if (pv->mv_views == 2 && sd != NULL && sd->size >= sizeof(AVStereo3D))
+        {
+            // MV-HEVC: the paired views are one full side-by-side frame,
+            // whatever the container says of its two views.
+            pv->title->stereo_3d = hb_stereo_3d_ff_to_hb(*(AVStereo3D *)sd->data);
+        }
+        else if (pv->title->stereo_3d.type == HB_STEREO3D_UNSET &&
             sd != NULL && sd->size >= sizeof(AVStereo3D))
         {
             pv->title->stereo_3d = hb_stereo_3d_ff_to_hb(*(AVStereo3D *)sd->data);
@@ -1693,6 +1709,166 @@ static void filter_video(hb_work_private_t *pv)
 }
 
 /*
+ * MV-HEVC (H.265 Annex G): with view_ids set to -1 the decoder outputs the two
+ * views of an access unit as two frames in turn. They become one full
+ * side-by-side frame, left view first, each view at its own size, nothing
+ * resampled, so the encode, its stereo marks and the preview follow the
+ * side-by-side path. A stream with one view is passed on as it is.
+ */
+static void mv_hevc_options(const AVCodec *codec, AVDictionary **av_opts)
+{
+    if (codec != NULL && codec->id == AV_CODEC_ID_HEVC)
+    {
+        av_dict_set(av_opts, "view_ids", "-1", 0);
+    }
+}
+
+static int mv_hevc_view_count(AVCodecContext *context)
+{
+    uint8_t *ids = NULL;
+    int count = 0;
+    if (av_opt_get(context, "view_ids_available", AV_OPT_SEARCH_CHILDREN, &ids) >= 0 &&
+        ids != NULL && *ids)
+    {
+        count = 1;
+        for (const uint8_t *p = ids; *p; p++)
+        {
+            count += *p == ',';
+        }
+    }
+    av_free(ids);
+    return count;
+}
+
+static int mv_hevc_view_side(const AVFrame *frame)
+{
+    const AVFrameSideData *sd = av_frame_get_side_data(frame, AV_FRAME_DATA_STEREO3D);
+    if (sd != NULL && sd->size >= sizeof(AVStereo3D))
+    {
+        const AVStereo3D *stereo = (const AVStereo3D *)sd->data;
+        if (stereo->view == AV_STEREO3D_VIEW_LEFT)
+            return 0;
+        if (stereo->view == AV_STEREO3D_VIEW_RIGHT)
+            return 1;
+    }
+    return -1;
+}
+
+static AVFrame *mv_hevc_compose(const AVFrame *left, const AVFrame *right)
+{
+    AVFrame *sbs = av_frame_alloc();
+    if (sbs == NULL || left->format != right->format)
+    {
+        av_frame_free(&sbs);
+        return NULL;
+    }
+    sbs->format = left->format;
+    sbs->width  = left->width + right->width;
+    sbs->height = FFMAX(left->height, right->height);
+    if (av_frame_get_buffer(sbs, 0) < 0 || av_frame_copy_props(sbs, left) < 0)
+    {
+        av_frame_free(&sbs);
+        return NULL;
+    }
+    ptrdiff_t linesizes[4];
+    for (int p = 0; p < 4; p++)
+    {
+        linesizes[p] = sbs->linesize[p];
+    }
+    av_image_fill_black(sbs->data, linesizes, sbs->format, sbs->color_range,
+                        sbs->width, sbs->height);
+
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(sbs->format);
+    int planes = av_pix_fmt_count_planes(sbs->format);
+    for (int p = 0; p < planes; p++)
+    {
+        int chroma = (p == 1 || p == 2) && !(desc->flags & AV_PIX_FMT_FLAG_RGB);
+        int left_bytes  = av_image_get_linesize(sbs->format, left->width, p);
+        int right_bytes = av_image_get_linesize(sbs->format, right->width, p);
+        int left_rows   = chroma ? AV_CEIL_RSHIFT(left->height,  desc->log2_chroma_h) : left->height;
+        int right_rows  = chroma ? AV_CEIL_RSHIFT(right->height, desc->log2_chroma_h) : right->height;
+        av_image_copy_plane(sbs->data[p], sbs->linesize[p],
+                            left->data[p], left->linesize[p], left_bytes, left_rows);
+        av_image_copy_plane(sbs->data[p] + left_bytes, sbs->linesize[p],
+                            right->data[p], right->linesize[p], right_bytes, right_rows);
+    }
+
+    av_frame_remove_side_data(sbs, AV_FRAME_DATA_VIEW_ID);
+    av_frame_remove_side_data(sbs, AV_FRAME_DATA_STEREO3D);
+    AVStereo3D *stereo = av_stereo3d_create_side_data(sbs);
+    if (stereo != NULL)
+    {
+        stereo->type = AV_STEREO3D_SIDEBYSIDE;
+        stereo->view = AV_STEREO3D_VIEW_PACKED;
+    }
+    return sbs;
+}
+
+// 1 when pv->frame holds a frame to pass on, 0 when it waits for its other view.
+static int mv_hevc_pair(hb_work_private_t *pv)
+{
+    if (pv->mv_views == 0)
+    {
+        if (av_frame_get_side_data(pv->frame, AV_FRAME_DATA_VIEW_ID) == NULL)
+            return 1;
+        pv->mv_views = mv_hevc_view_count(pv->context) == 2 ? 2 : -1;
+        if (pv->mv_views == 2)
+        {
+            hb_log("decavcodec: MV-HEVC with two views: each access unit becomes "
+                   "one full side-by-side frame, left view first");
+        }
+    }
+    if (pv->mv_views != 2)
+        return 1;
+
+    if (pv->mv_first == NULL)
+    {
+        pv->mv_first = av_frame_clone(pv->frame);
+        av_frame_unref(pv->frame);
+        return 0;
+    }
+
+    AVFrame *first = pv->mv_first, *second = av_frame_clone(pv->frame);
+    pv->mv_first = NULL;
+    av_frame_unref(pv->frame);
+    if (second == NULL)
+    {
+        av_frame_free(&first);
+        return 0;
+    }
+    if (first->pts != second->pts)
+    {
+        // The held view's access unit had no second view: both eyes show it.
+        if (!pv->mv_unpaired++)
+        {
+            hb_log("decavcodec: MV-HEVC: an access unit has one view; "
+                   "both eyes show that view for it");
+        }
+        pv->mv_first = second;
+        second = av_frame_clone(first);
+        if (second == NULL)
+        {
+            av_frame_free(&first);
+            return 0;
+        }
+    }
+    int swap = mv_hevc_view_side(first) == 1 || mv_hevc_view_side(second) == 0;
+    AVFrame *sbs = mv_hevc_compose(swap ? second : first, swap ? first : second);
+    av_frame_free(&first);
+    av_frame_free(&second);
+    if (sbs == NULL)
+    {
+        hb_error("decavcodec: MV-HEVC: the two views could not be put side by side");
+        return 0;
+    }
+    pv->mv_width  = sbs->width;
+    pv->mv_height = sbs->height;
+    av_frame_move_ref(pv->frame, sbs);
+    av_frame_free(&sbs);
+    return 1;
+}
+
+/*
  * Decodes a video frame from the specified raw packet data
  *      ('data', 'size').
  * The output of this function is stored in 'pv->list', which contains a list
@@ -1804,6 +1980,11 @@ static int decodeFrame( hb_work_private_t * pv, packet_info_t * packet_info )
             }
         }
 
+        if (!mv_hevc_pair(pv))
+        {
+            continue;
+        }
+
         // recompute the frame/field duration, because sometimes it changes
         compute_frame_duration( pv );
         filter_video(pv);
@@ -1909,6 +2090,7 @@ static int decavcodecvInit( hb_work_object_t * w, hb_job_t * job )
         }
 #endif
 
+        mv_hevc_options(pv->codec, &av_opts);
         if ( hb_avcodec_open( pv->context, pv->codec, &av_opts, pv->threads ) )
         {
             av_dict_free( &av_opts );
@@ -2102,6 +2284,7 @@ static int decodePacket( hb_work_object_t * w )
         }
 
         // disable threaded decoding for scan, can cause crashes
+        mv_hevc_options(pv->codec, &av_opts);
         if ( hb_avcodec_open( pv->context, pv->codec, &av_opts, pv->threads ) )
         {
             av_dict_free( &av_opts );
@@ -2418,6 +2601,12 @@ static int decavcodecvInfo( hb_work_object_t *w, hb_work_info_t *info )
         // of incoming video if not even.
         info->geometry.width = pv->context->width & ~1;
         info->geometry.height = pv->context->height & ~1;
+        if (pv->mv_views == 2 && pv->mv_width > 0)
+        {
+            // MV-HEVC: the two views side by side
+            info->geometry.width = pv->mv_width & ~1;
+            info->geometry.height = pv->mv_height & ~1;
+        }
 
         info->geometry.par.num = pv->context->sample_aspect_ratio.num;
         info->geometry.par.den = pv->context->sample_aspect_ratio.den;
