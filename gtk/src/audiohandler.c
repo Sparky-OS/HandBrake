@@ -970,6 +970,25 @@ audio_update_setting(
     }
 }
 
+// Fraunhofer's AAC encoders are listed even when this computer's FFmpeg lacks
+// them; choosing one says why and how to get them (a job with one does not
+// start: libhb never replaces an absent encoder behind the person's back).
+static void
+audio_encoder_say_absent (const char *short_name)
+{
+    const hb_encoder_t *absent = hb_audio_encoder_get_absent(short_name);
+
+    if (absent == NULL || strncmp(absent->short_name, "fdk_", 4))
+        return;
+    ghb_alert_dialog_show(GTK_MESSAGE_INFO,
+        _("Fraunhofer's AAC encoder is not in this computer's FFmpeg"),
+        _("Sparky Stereo OS may not pass on an FFmpeg built with it, so it is "
+          "built on your own computer: install sparky-stereo-ffmpeg-fdk, then "
+          "run sparky-stereo-ffmpeg-fdk in a terminal; it explains and asks "
+          "first. Until then, a job with %s does not start."),
+        absent->name);
+}
+
 G_MODULE_EXPORT void
 audio_codec_changed_cb (GtkWidget *widget, gpointer data)
 {
@@ -1012,6 +1031,7 @@ audio_codec_changed_cb (GtkWidget *widget, gpointer data)
         prev_acodec = acodec;
         return;
     }
+    audio_encoder_say_absent(ghb_dict_get_string(ud->settings, "AudioEncoder"));
 
     if (ghb_audio_is_passthru(prev_acodec) &&
         !ghb_audio_is_passthru(acodec))
@@ -2418,6 +2438,10 @@ audio_def_encoder_changed_cb (GtkWidget *widget, gpointer data)
     audio_def_setting_update(ud, widget);
     audio_def_set_limits(ud, widget, TRUE);
     ghb_clear_presets_selection(ud);
+
+    gchar *name = ghb_widget_string(widget);
+    audio_encoder_say_absent(name);
+    g_free(name);
 }
 
 G_MODULE_EXPORT void

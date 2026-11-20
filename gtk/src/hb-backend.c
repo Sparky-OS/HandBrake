@@ -1901,6 +1901,25 @@ ghb_audio_encoder_opts_set_with_mask(
             g_free(str);
         }
     }
+    // Fraunhofer's AAC encoders stay listed when this computer's FFmpeg lacks
+    // them (not in a fallback list); choosing one says why and how to get them.
+    if (neg_mask & HB_ACODEC_PASS_FLAG)
+        return;
+    for (enc = hb_audio_encoder_get_next_absent(NULL); enc != NULL;
+         enc = hb_audio_encoder_get_next_absent(enc))
+    {
+        if (strncmp(enc->short_name, "fdk_", 4))
+            continue;
+        gtk_list_store_append(store, &iter);
+        str = g_strdup_printf("<small>%s</small>", enc->name);
+        gtk_list_store_set(store, &iter,
+                           0, str,
+                           1, TRUE,
+                           2, enc->short_name,
+                           3, (gdouble)HB_ACODEC_INVALID,
+                           -1);
+        g_free(str);
+    }
 }
 
 void
@@ -1930,6 +1949,14 @@ ghb_audio_encoder_opts_add_autopass(GtkComboBox *combo)
 const hb_encoder_t*
 ghb_lookup_audio_encoder(const char *name)
 {
+    // An encoder this computer lacks keeps its own name in the window; its
+    // codec value is the one its name resolves to.
+    const hb_encoder_t *absent = hb_audio_encoder_get_absent(name);
+    if (absent != NULL)
+    {
+        return absent;
+    }
+
     // First find an enabled encoder
     int codec = hb_audio_encoder_get_from_name(name);
 
